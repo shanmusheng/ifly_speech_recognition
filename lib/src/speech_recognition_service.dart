@@ -520,10 +520,11 @@ mixin _AuthorizationMixin {
   final _host = 'iat-api.xfyun.cn';
 
   /// 获取鉴权接口
+  /// 获取鉴权接口
   String authorizationUrl(String appKey, String appSecret) {
-    // 当前时间戳，RFC1123格式
-    final format = DateFormat("EEE, dd MMM yyyy HH:mm:ss 'GMT'");
-    final date = format.format(DateTime.now());
+    // 当前时间戳，RFC1123格式，强制英文 locale 避免中文系统输出中文日期
+    final format = DateFormat("EEE, dd MMM yyyy HH:mm:ss 'GMT'", 'en_US');
+    final date = format.format(DateTime.now().toUtc());
 
     // signature原始字段
     final signatureOrigin = 'host: $_host\ndate: $date\nGET /v2/iat HTTP/1.1';
@@ -546,7 +547,7 @@ mixin _AuthorizationMixin {
 
     // 拼接鉴权接口
     final url =
-        '$_socketUrl?authorization=$authorization&date=$date&host=$_host';
+        '$_socketUrl?authorization=$authorization&date=${Uri.encodeComponent(date)}&host=$_host';
 
     return url;
   }
