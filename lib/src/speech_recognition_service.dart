@@ -32,10 +32,12 @@ class SpeechRecognitionService with _RecordingMixin, _AuthorizationMixin {
   }) =>
       _instance ?? SpeechRecognitionService._internal(appId, appKey, appSecret);
 
-  void dispose() {
-    disposeRecording();
+  Future<void> dispose() async {
+    await disposeRecording();
     _waitingForResultsTimer?.cancel();
     _waitingForResultsTimer = null;
+    // 清除单例，确保下次 factory 创建新实例
+    _instance = null;
   }
 
   // ---------------- 科大讯飞语音识别 ----------------
@@ -343,6 +345,9 @@ mixin _RecordingMixin {
   /// 录音机是否初始化
   bool _mRecorderIsInited = false;
 
+  /// 是否已销毁，销毁后拒绝一切操作
+  bool _mDisposed = false;
+
   StreamController<Uint8List>? _mRecordingDataController;
 
   /// 录音流数据回调
@@ -369,6 +374,10 @@ mixin _RecordingMixin {
 
   /// 初始化
   Future<void> initRecorder() async {
+    if (_mDisposed) {
+      debugPrint('initRecorder: 已销毁，跳过初始化');
+      return;
+    }
     await _mRecorder!.openRecorder();
 
     final session = await AudioSession.instance;
@@ -397,6 +406,7 @@ mixin _RecordingMixin {
 
   /// 开始录音
   Future<bool> startRecord() async {
+    if (_mDisposed) return false;
     if (!_mRecorderIsInited) {
       _resultController?.sink.addError('未初始化录音服务');
       return false;
@@ -443,6 +453,7 @@ mixin _RecordingMixin {
 
   /// 停止录音
   Future<bool> stopRecord() async {
+    if (_mDisposed) return false;
     if (!_mRecorderIsInited) {
       _resultController?.sink.addError('未初始化录音服务');
       return false;
@@ -492,10 +503,22 @@ mixin _RecordingMixin {
   /// 获取录音数据
   List<int> getRecordingData() => streamFormatConversion(_micChunks);
 
-  void disposeRecording() {
-    stopRecord();
-    _mRecorder!.closeRecorder();
-    _mRecorder = null;
+  Future<void> disposeRecording() async {
+    if (_mDisposed) return;
+    _mDisposed = true;
+    _mRecorderIsInited = false;
+
+    // 必须先 await stopRecord，再 closeRecorder，否则 flutter_sound 内部状态混乱
+    await stopRecord();
+
+    if (_mRecorder != null) {
+      try {
+        await _mRecorder!.closeRecorder();
+      } catch (e) {
+        debugPrint('closeRecorder 出错（已忽略）：$e');
+      }
+      _mRecorder = null;
+    }
 
     _mRecordingDataSubscription?.cancel();
     _mRecordingDataSubscription = null;
